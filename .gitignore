@@ -6,7 +6,8 @@ terraform.tfstate.backup
 crash.log
 *.tfvars
 *.tfvars.json
-# IDE files
+
+# IDE / OS
 .vscode/
 .idea/
 .DS_Store
