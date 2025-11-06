@@ -16,6 +16,9 @@ The stack includes:
 
 ## 🏗️ Architecture Overview
 
+<img width="1134" height="1027" alt="Screenshot 2025-11-06 at 12 39 49 AM" src="https://github.com/user-attachments/assets/057f8b32-8cda-429d-adce-c3b09212f035" />
+
+
 * **Public layer:** ALB + 1 NAT Gateway
 * **Private layer:** EC2 instances (Auto Scaling Group) running Docker containers
 * **Database layer:** RDS MySQL instance (private access only)
@@ -186,7 +189,7 @@ Type `yes` when prompted.
 
 ## 🧾 License
 
-MIT License — free for personal and educational use.
+Apache License 2.0 — free for personal and educational use.
 
 ---
 
