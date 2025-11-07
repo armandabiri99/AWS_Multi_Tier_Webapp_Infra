@@ -42,8 +42,8 @@ resource "aws_nat_gateway" "nat" {
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
   route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
+    cidr_block     = "0.0.0.0/0"
+    nat_gateway_id = aws_internet_gateway.igw.id
   }
 }
 resource "aws_route_table_association" "public_assoc" {
@@ -147,6 +147,17 @@ resource "aws_security_group" "eic_endpoint_sg" {
   }
 }
 
+resource "aws_vpc_security_group_ingress_rule" "eic_allow_clients" {
+  for_each = toset(var.eic_allowed_cidrs)
+
+  security_group_id = aws_security_group.eic_endpoint_sg.id
+  cidr_ipv4         = each.value
+  ip_protocol       = "tcp"
+  from_port         = 22
+  to_port           = 22
+  description       = "SSH access to EC2 Instance Connect from ${each.value}"
+}
+
 # RDS Proxy Security Groups
 
 resource "aws_security_group" "rds_proxy_sg" {
@@ -218,39 +229,41 @@ resource "aws_db_subnet_group" "db_subnets" {
 }
 
 resource "aws_db_instance" "mysql" {
-  identifier               = "webapp-mysql"
-  engine                   = var.db_engine
-  engine_version           = var.db_version
-  instance_class           = var.db_instance
-  username                 = var.db_user
-  password                 = var.db_password
-  db_name                  = var.db_name
-  allocated_storage        = 20
-  storage_type             = "gp3"
-  multi_az                 = true
-  publicly_accessible      = false
-  vpc_security_group_ids   = [aws_security_group.rds_sg.id]
-  db_subnet_group_name     = aws_db_subnet_group.db_subnets.name
-  backup_retention_period  = 7
-  delete_automated_backups = true
-  deletion_protection      = false
-  skip_final_snapshot      = true
+  identifier                = "webapp-mysql"
+  engine                    = var.db_engine
+  engine_version            = var.db_version
+  instance_class            = var.db_instance
+  username                  = var.db_user
+  password                  = var.db_password
+  db_name                   = var.db_name
+  allocated_storage         = 20
+  storage_type              = "gp3"
+  multi_az                  = true
+  publicly_accessible       = false
+  vpc_security_group_ids    = [aws_security_group.rds_sg.id]
+  db_subnet_group_name      = aws_db_subnet_group.db_subnets.name
+  backup_retention_period   = 7
+  delete_automated_backups  = true
+  deletion_protection       = false
+  skip_final_snapshot       = true
+  final_snapshot_identifier = null
 }
 
 # RDS Read Replicas
 
 resource "aws_db_instance" "mysql_replicas" {
-  for_each               = toset(var.azs)
-  identifier             = "webapp-mysql-rr-${replace(each.value, "-", "")}"
-  replicate_source_db    = aws_db_instance.mysql.id
-  instance_class         = var.db_instance
-  engine                 = var.db_engine
-  engine_version         = var.db_version
-  publicly_accessible    = false
-  vpc_security_group_ids = [aws_security_group.rds_sg.id]
-  db_subnet_group_name   = aws_db_subnet_group.db_subnets.name
-  availability_zone      = each.value
-
+  for_each                   = toset(var.azs)
+  identifier                 = "webapp-mysql-rr-${replace(each.value, "-", "")}"
+  replicate_source_db        = aws_db_instance.mysql.arn
+  instance_class             = var.db_instance
+  engine                     = var.db_engine
+  engine_version             = var.db_version
+  publicly_accessible        = false
+  vpc_security_group_ids     = [aws_security_group.rds_sg.id]
+  db_subnet_group_name       = aws_db_subnet_group.db_subnets.name
+  availability_zone          = each.value
+  deletion_protection        = false
+  skip_final_snapshot        = true
   auto_minor_version_upgrade = true
   apply_immediately          = true
   tags                       = { Role = "read-replica", AZ = each.value }
@@ -539,8 +552,15 @@ resource "aws_autoscaling_policy" "cpu_target" {
 }
 # Instance Connect Enspoint Creation
 
+locals {
+  eic_target_azs = length(var.eic_endpoint_azs) > 0 ? var.eic_endpoint_azs : [element(var.azs, 0)]
+}
+
 resource "aws_ec2_instance_connect_endpoint" "this" {
-  for_each           = aws_subnet.private
+  for_each = {
+    for az, subnet in aws_subnet.private : az => subnet
+    if contains(local.eic_target_azs, az)
+  }
   subnet_id          = each.value.id
   security_group_ids = [aws_security_group.eic_endpoint_sg.id]
 

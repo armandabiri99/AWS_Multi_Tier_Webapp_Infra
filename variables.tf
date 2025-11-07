@@ -85,3 +85,15 @@ variable "db_password" {
   type    = string
   default = "123&awscloud"
 }
+
+variable "eic_allowed_cidrs" {
+  description = "List of CIDR blocks allowed to reach the EC2 Instance Connect endpoints"
+  type        = list(string)
+  default     = ["0.0.0.0/0"]
+}
+
+variable "eic_endpoint_azs" {
+  description = "Availability Zones where EC2 Instance Connect endpoints should be created. Leave empty to default to a single AZ to satisfy the default service quota."
+  type        = list(string)
+  default     = []
+}
