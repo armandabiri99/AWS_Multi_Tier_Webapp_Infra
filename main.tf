@@ -507,14 +507,22 @@ resource "aws_launch_template" "lt" {
     #!/bin/bash
     set -euxo pipefail
 
+    # Update system and install required packages
     dnf update -y
-    dnf install -y docker awscli
+    dnf install -y docker awscli ec2-instance-connect
+
+    # Start Docker
     systemctl enable --now docker
 
+    # Ensure SSM agent is running (pre-installed on AL2023, but ensure it's active)
+    systemctl enable --now amazon-ssm-agent
+
+    # Retrieve database credentials from SSM Parameter Store
     DB_NAME=$(aws ssm get-parameter --name "${aws_ssm_parameter.db_name.name}" --region ${var.region} --query 'Parameter.Value' --output text)
     DB_USER=$(aws ssm get-parameter --name "${aws_ssm_parameter.db_user.name}" --region ${var.region} --query 'Parameter.Value' --output text)
     DB_PASS=$(aws ssm get-parameter --name "${aws_ssm_parameter.db_pass.name}" --with-decryption --region ${var.region} --query 'Parameter.Value' --output text)
 
+    # Start application container
     docker rm -f webapp || true
     docker pull ${var.ecr_public_image}
     docker run -d --restart=always --name webapp \
