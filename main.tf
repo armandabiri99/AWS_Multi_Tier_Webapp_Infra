@@ -68,39 +68,57 @@ resource "aws_route_table_association" "private_assoc" {
 ################
 # Security groups
 ################
+
 resource "aws_security_group" "alb_sg" {
-  name   = "alb-sg"
-  vpc_id = aws_vpc.main.id
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  name        = "alb-sg"
+  description = "ALB security group"
+  vpc_id      = aws_vpc.main.id
+  tags        = { Name = "alb-sg" }
+}
+
+# Ingress: HTTP 80 from anywhere (IPv4)
+resource "aws_vpc_security_group_ingress_rule" "alb_http_ipv4" {
+  security_group_id = aws_security_group.alb_sg.id
+  description       = "Allow HTTP from anywhere (IPv4)"
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+# Egress: allow all (IPv4)
+resource "aws_vpc_security_group_egress_rule" "alb_egress_all_ipv4" {
+  security_group_id = aws_security_group.alb_sg.id
+  description       = "Allow all egress (IPv4)"
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
 }
 
 resource "aws_security_group" "app_sg" {
   name   = "app-sg"
   vpc_id = aws_vpc.main.id
-  ingress {
-    description     = "From ALB"
-    from_port       = var.container_port
-    to_port         = var.container_port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb_sg.id]
+  lifecycle {
+    ignore_changes = [ingress, egress]
   }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+
+  tags = { Name = "app-sg" }
+}
+
+# ALB -> App on container port
+resource "aws_vpc_security_group_ingress_rule" "app_from_alb" {
+  security_group_id            = aws_security_group.app_sg.id
+  referenced_security_group_id = aws_security_group.alb_sg.id
+  ip_protocol                  = "tcp"
+  from_port                    = var.container_port
+  to_port                      = var.container_port
+  description                  = "From ALB"
+}
+
+# App -> anywhere (egress all)
+resource "aws_vpc_security_group_egress_rule" "app_egress_all" {
+  security_group_id = aws_security_group.app_sg.id
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "app_allow_ssh_from_eic" {
@@ -116,19 +134,28 @@ resource "aws_vpc_security_group_ingress_rule" "app_allow_ssh_from_eic" {
 resource "aws_security_group" "rds_sg" {
   name   = "rds-sg"
   vpc_id = aws_vpc.main.id
-  # ingress {
-  #   description     = "MySQL from app"
-  #   from_port       = 3306
-  #   to_port         = 3306
-  #   protocol        = "tcp"
-  #   security_groups = [aws_security_group.app_sg.id]
-  # }
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
+  lifecycle {
+    ignore_changes = [ingress, egress]
   }
+
+  tags = { Name = "rds-sg" }
+}
+
+resource "aws_vpc_security_group_egress_rule" "rds_egress_all" {
+  security_group_id = aws_security_group.rds_sg.id
+  description       = "Allow all outbound traffic"
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+# Proxy → DB on 3306 (INGRESS on DB SG allowing the proxy SG)
+resource "aws_vpc_security_group_ingress_rule" "db_allow_from_proxy" {
+  security_group_id            = aws_security_group.rds_sg.id
+  referenced_security_group_id = aws_security_group.rds_proxy_sg.id
+  ip_protocol                  = "tcp"
+  from_port                    = 3306
+  to_port                      = 3306
+  description                  = "MySQL from RDS Proxy"
 }
 
 resource "aws_security_group" "eic_endpoint_sg" {
@@ -136,15 +163,18 @@ resource "aws_security_group" "eic_endpoint_sg" {
   description = "SG for EC2 Instance Connect Endpoints"
   vpc_id      = aws_vpc.main.id
   tags        = { Name = "eic-endpoint-sg" }
-
-  # Allow the endpoint to initiate SSH to app instances
-  egress {
-    description     = "SSH to app instances via app_sg"
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    security_groups = [aws_security_group.app_sg.id]
+  lifecycle {
+    ignore_changes = [ingress, egress]
   }
+}
+
+resource "aws_vpc_security_group_egress_rule" "eic_to_app_ssh" {
+  security_group_id            = aws_security_group.eic_endpoint_sg.id
+  referenced_security_group_id = aws_security_group.app_sg.id
+  ip_protocol                  = "tcp"
+  from_port                    = 22
+  to_port                      = 22
+  description                  = "Allow SSH to app instances"
 }
 
 resource "aws_vpc_security_group_ingress_rule" "eic_allow_clients" {
@@ -182,16 +212,6 @@ resource "aws_vpc_security_group_egress_rule" "proxy_egress_all" {
   security_group_id = aws_security_group.rds_proxy_sg.id
   ip_protocol       = "-1"
   cidr_ipv4         = "0.0.0.0/0"
-}
-
-# Proxy → DB on 3306 (INGRESS on DB SG allowing the proxy SG)
-resource "aws_vpc_security_group_ingress_rule" "db_allow_from_proxy" {
-  security_group_id            = aws_security_group.rds_sg.id
-  referenced_security_group_id = aws_security_group.rds_proxy_sg.id
-  ip_protocol                  = "tcp"
-  from_port                    = 3306
-  to_port                      = 3306
-  description                  = "MySQL from RDS Proxy"
 }
 
 # SG for VPC Interface Endpoints
@@ -507,40 +527,47 @@ resource "aws_launch_template" "lt" {
   }
 
   user_data = base64encode(<<-EOF
-    #!/bin/bash
-    set -euxo pipefail
+  #!/bin/bash
+  set -euxo pipefail
 
-    # Update system and install required packages
-    dnf update -y
-    dnf install -y docker awscli ec2-instance-connect
+  #log to both console and a file for easy troubleshooting
+  exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
 
-    # Restart sshd to pick up ec2-instance-connect configuration
-    # The package adds AuthorizedKeysCommand config that requires daemon restart
-    systemctl restart sshd
+  dnf update -y || true
 
-    # Start Docker
-    systemctl enable --now docker
+  dnf install -y docker awscli ec2-instance-connect amazon-ssm-agent || true
 
-    # Ensure SSM agent is running (pre-installed on AL2023, but ensure it's active)
-    systemctl enable --now amazon-ssm-agent
+  systemctl restart sshd || true
 
-    # Retrieve database credentials from SSM Parameter Store
-    DB_NAME=$(aws ssm get-parameter --name "${aws_ssm_parameter.db_name.name}" --region ${var.region} --query 'Parameter.Value' --output text)
-    DB_USER=$(aws ssm get-parameter --name "${aws_ssm_parameter.db_user.name}" --region ${var.region} --query 'Parameter.Value' --output text)
-    DB_PASS=$(aws ssm get-parameter --name "${aws_ssm_parameter.db_pass.name}" --with-decryption --region ${var.region} --query 'Parameter.Value' --output text)
+  systemctl enable --now docker || true
 
-    # Start application container
-    docker rm -f webapp || true
-    docker pull ${var.ecr_public_image}
-    docker run -d --restart=always --name webapp \
-      -p ${var.container_port}:${var.container_port} \
-      -e DB_HOST="${aws_db_proxy.mysql.endpoint}" \
-      -e DB_PORT="3306" \
-      -e DB_NAME="$${DB_NAME}" \
-      -e DB_USER="$${DB_USER}" \
-      -e DB_PASS="$${DB_PASS}" \
-      ${var.ecr_public_image}
-  EOF
+  usermod -aG docker ec2-user || true
+
+
+  systemctl enable --now amazon-ssm-agent || true
+
+  retry() { n=0; until "$@" || [ $n -ge 10 ]; do n=$((n+1)); sleep 3; done; "$@"; }
+
+  # Retrieve database credentials from SSM Parameter Store (with retries)
+  DB_NAME=$(retry aws ssm get-parameter --name "${aws_ssm_parameter.db_name.name}" --region ${var.region} --query 'Parameter.Value' --output text)
+  DB_USER=$(retry aws ssm get-parameter --name "${aws_ssm_parameter.db_user.name}" --region ${var.region} --query 'Parameter.Value' --output text)
+  DB_PASS=$(retry aws ssm get-parameter --name "${aws_ssm_parameter.db_pass.name}" --with-decryption --region ${var.region} --query 'Parameter.Value' --output text)
+
+  # Start application container
+  docker rm -f webapp || true
+  docker pull ${var.ecr_public_image}
+  docker run -d --restart=always --name webapp \
+    -p ${var.container_port}:${var.container_port} \
+    -e DB_HOST="${aws_db_proxy.mysql.endpoint}" \
+    -e DB_PORT="3306" \
+    -e DB_NAME="$${DB_NAME}" \
+    -e DB_USER="$${DB_USER}" \
+    -e DB_PASS="$${DB_PASS}" \
+    ${var.ecr_public_image}
+
+  # success marker so you can confirm in cloud-init logs
+  echo "USER-DATA COMPLETE"
+EOF
   )
 }
 
