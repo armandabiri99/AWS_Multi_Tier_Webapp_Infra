@@ -377,17 +377,20 @@ resource "aws_db_proxy_target" "writer" {
   db_instance_identifier = aws_db_instance.mysql.identifier
 }
 
-# Reader endpoint for read-only queries
-# RDS Proxy will automatically route READ_ONLY queries to available read replicas
+# Note: RDS Proxy READ_ONLY endpoints are not supported for standalone RDS instances
+# READ_ONLY endpoints work with Aurora clusters, but not with RDS instances + read replicas
+# For now, applications should use the writer endpoint for both reads and writes
+# RDS Proxy provides connection pooling and will distribute connections efficiently
 
-resource "aws_db_proxy_endpoint" "reader" {
-  db_proxy_name          = aws_db_proxy.mysql.name
-  db_proxy_endpoint_name = "webapp-mysql-proxy-reader"
-  vpc_subnet_ids         = [for s in aws_subnet.private : s.id]
-  vpc_security_group_ids = [aws_security_group.rds_proxy_sg.id]
-  target_role            = "READ_ONLY"
-  tags                   = { Role = "rds-proxy-reader" }
-}
+# Uncomment below if using Aurora instead of standalone RDS:
+# resource "aws_db_proxy_endpoint" "reader" {
+#   db_proxy_name          = aws_db_proxy.mysql.name
+#   db_proxy_endpoint_name = "webapp-mysql-proxy-reader"
+#   vpc_subnet_ids         = [for s in aws_subnet.private : s.id]
+#   vpc_security_group_ids = [aws_security_group.rds_proxy_sg.id]
+#   target_role            = "READ_ONLY"
+#   tags                   = { Role = "rds-proxy-reader" }
+# }
 
 ################
 # IAM for EC2 (SSM + SSM Param read)
@@ -511,6 +514,10 @@ resource "aws_launch_template" "lt" {
     dnf update -y
     dnf install -y docker awscli ec2-instance-connect
 
+    # Restart sshd to pick up ec2-instance-connect configuration
+    # The package adds AuthorizedKeysCommand config that requires daemon restart
+    systemctl restart sshd
+
     # Start Docker
     systemctl enable --now docker
 
@@ -528,7 +535,6 @@ resource "aws_launch_template" "lt" {
     docker run -d --restart=always --name webapp \
       -p ${var.container_port}:${var.container_port} \
       -e DB_HOST="${aws_db_proxy.mysql.endpoint}" \
-      -e READ_DB_HOST="${aws_db_proxy_endpoint.reader.endpoint}" \
       -e DB_PORT="3306" \
       -e DB_NAME="$${DB_NAME}" \
       -e DB_USER="$${DB_USER}" \

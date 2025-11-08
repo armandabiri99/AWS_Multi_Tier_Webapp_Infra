@@ -1,11 +1,13 @@
 output "alb_dns" { value = aws_lb.alb.dns_name }
 
-output "rds_proxy_writer_endpoint" {
+output "rds_proxy_endpoint" {
   value       = aws_db_proxy.mysql.endpoint
-  description = "Use for WRITES (and reads if app can't split)."
+  description = "RDS Proxy endpoint for database connections (use for both reads and writes)"
 }
 
-output "rds_proxy_reader_endpoint" {
-  value       = aws_db_proxy_endpoint.reader.endpoint
-  description = "Use for READS (load balanced across replicas)."
-}
+# Note: READ_ONLY endpoint removed because RDS Proxy doesn't support read replicas
+# for standalone RDS instances (only works with Aurora clusters)
+# output "rds_proxy_reader_endpoint" {
+#   value       = aws_db_proxy_endpoint.reader.endpoint
+#   description = "Use for READS (load balanced across replicas)."
+# }
