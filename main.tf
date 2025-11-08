@@ -420,6 +420,11 @@ resource "aws_iam_role_policy_attachment" "ssm_core" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+resource "aws_iam_role_policy_attachment" "ecr_read" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
 resource "aws_iam_policy" "param_read" {
   name   = "webapp-ssm-params-read"
   policy = data.aws_iam_policy_document.ssm_params_read.json
@@ -520,13 +525,14 @@ resource "aws_launch_template" "lt" {
 }
 
 resource "aws_autoscaling_group" "asg" {
-  name                = "webapp-asg"
-  desired_capacity    = var.asg_desired
-  min_size            = var.asg_min
-  max_size            = var.asg_max
-  vpc_zone_identifier = [for s in aws_subnet.private : s.id]
-  health_check_type   = "ELB"
-  target_group_arns   = [aws_lb_target_group.tg.arn]
+  name                      = "webapp-asg"
+  desired_capacity          = var.asg_desired
+  min_size                  = var.asg_min
+  max_size                  = var.asg_max
+  vpc_zone_identifier       = [for s in aws_subnet.private : s.id]
+  health_check_type         = "ELB"
+  health_check_grace_period = 300
+  target_group_arns         = [aws_lb_target_group.tg.arn]
   launch_template {
     id      = aws_launch_template.lt.id
     version = "$Latest"
@@ -550,7 +556,10 @@ resource "aws_autoscaling_policy" "cpu_target" {
     target_value = 60
   }
 }
-# Instance Connect Enspoint Creation
+# Instance Connect Endpoint Creation
+# NOTE: By default, only one EIC endpoint is created (in first AZ) due to service quota limits.
+# EIC endpoints work across AZs in the same VPC, so one endpoint can connect to instances in any AZ.
+# To create endpoints in multiple AZs, set eic_endpoint_azs variable and request quota increase.
 
 locals {
   eic_target_azs = length(var.eic_endpoint_azs) > 0 ? var.eic_endpoint_azs : [element(var.azs, 0)]
@@ -604,4 +613,34 @@ resource "aws_vpc_endpoint" "ec2messages" {
   security_group_ids  = [aws_security_group.vpce_sg.id]
   private_dns_enabled = true
   tags                = { Name = "vpce-ec2messages" }
+}
+
+# ECR Endpoints for Docker image pulls
+resource "aws_vpc_endpoint" "ecr_api" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.region}.ecr.api"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [for s in aws_subnet.private : s.id]
+  security_group_ids  = [aws_security_group.vpce_sg.id]
+  private_dns_enabled = true
+  tags                = { Name = "vpce-ecr-api" }
+}
+
+resource "aws_vpc_endpoint" "ecr_dkr" {
+  vpc_id              = aws_vpc.main.id
+  service_name        = "com.amazonaws.${var.region}.ecr.dkr"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = [for s in aws_subnet.private : s.id]
+  security_group_ids  = [aws_security_group.vpce_sg.id]
+  private_dns_enabled = true
+  tags                = { Name = "vpce-ecr-dkr" }
+}
+
+# S3 Gateway Endpoint for ECR image layers
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${var.region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.private.id]
+  tags              = { Name = "vpce-s3" }
 }
