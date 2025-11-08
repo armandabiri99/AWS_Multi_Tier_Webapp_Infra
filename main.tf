@@ -493,6 +493,16 @@ resource "aws_launch_template" "lt" {
   iam_instance_profile { name = aws_iam_instance_profile.ec2_profile.name }
   vpc_security_group_ids = [aws_security_group.app_sg.id]
 
+  # Increase root volume size for Docker images
+  block_device_mappings {
+    device_name = "/dev/xvda"
+    ebs {
+      volume_size           = 20
+      volume_type           = "gp3"
+      delete_on_termination = true
+    }
+  }
+
   user_data = base64encode(<<-EOF
     #!/bin/bash
     set -euxo pipefail
