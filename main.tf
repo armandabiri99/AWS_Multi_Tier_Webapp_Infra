@@ -368,22 +368,17 @@ resource "aws_db_proxy_default_target_group" "this" {
   }
 }
 
-# Register the writer
+# Register the writer (primary instance only)
+# RDS Proxy automatically discovers and routes to read replicas
+# Do NOT register read replicas as targets - RDS Proxy doesn't support it
 resource "aws_db_proxy_target" "writer" {
   db_proxy_name          = aws_db_proxy.mysql.name
   target_group_name      = aws_db_proxy_default_target_group.this.name
   db_instance_identifier = aws_db_instance.mysql.identifier
 }
 
-# Register all replicas (READ targets too)
-resource "aws_db_proxy_target" "replicas" {
-  for_each               = aws_db_instance.mysql_replicas
-  db_proxy_name          = aws_db_proxy.mysql.name
-  target_group_name      = aws_db_proxy_default_target_group.this.name
-  db_instance_identifier = each.value.identifier
-}
-
-# Reader endpoint accross all replicas
+# Reader endpoint for read-only queries
+# RDS Proxy will automatically route READ_ONLY queries to available read replicas
 
 resource "aws_db_proxy_endpoint" "reader" {
   db_proxy_name          = aws_db_proxy.mysql.name
