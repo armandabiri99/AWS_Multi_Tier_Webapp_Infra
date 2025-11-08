@@ -2,6 +2,7 @@
 .terraform/
 terraform.tfstate
 terraform.tfstate.backup
+.terraform.locl.hcl
 crash.log
 *.tfvars
 *.tfvars.json
