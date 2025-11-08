@@ -289,7 +289,8 @@ resource "aws_ssm_parameter" "db_pass" {
 # Secret for RDS proxy auth
 
 resource "aws_secretsmanager_secret" "db_auth" {
-  name = "webapp/mysql/proxy-auth"
+  name                    = "webapp/mysql/proxy-auth"
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "db_auth_v1" {
@@ -371,7 +372,7 @@ resource "aws_db_proxy_default_target_group" "this" {
 resource "aws_db_proxy_target" "writer" {
   db_proxy_name          = aws_db_proxy.mysql.name
   target_group_name      = aws_db_proxy_default_target_group.this.name
-  db_instance_identifier = aws_db_instance.mysql.id
+  db_instance_identifier = aws_db_instance.mysql.identifier
 }
 
 # Register all replicas (READ targets too)
@@ -379,7 +380,7 @@ resource "aws_db_proxy_target" "replicas" {
   for_each               = aws_db_instance.mysql_replicas
   db_proxy_name          = aws_db_proxy.mysql.name
   target_group_name      = aws_db_proxy_default_target_group.this.name
-  db_instance_identifier = each.value.id
+  db_instance_identifier = each.value.identifier
 }
 
 # Reader endpoint accross all replicas
