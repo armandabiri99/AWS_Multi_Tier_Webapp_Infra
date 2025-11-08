@@ -289,7 +289,8 @@ resource "aws_ssm_parameter" "db_pass" {
 # Secret for RDS proxy auth
 
 resource "aws_secretsmanager_secret" "db_auth" {
-  name = "webapp/mysql/proxy-auth"
+  name                    = "webapp/mysql/proxy-auth"
+  recovery_window_in_days = 0
 }
 
 resource "aws_secretsmanager_secret_version" "db_auth_v1" {
