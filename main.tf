@@ -350,6 +350,18 @@ resource "aws_iam_role_policy" "rds_proxy_sm_access" {
           "secretsmanager:DescribeSecret"
         ],
         Resource : aws_secretsmanager_secret.db_auth.arn
+      },
+      {
+        Effect : "Allow",
+        Action : [
+          "kms:Decrypt"
+        ],
+        Resource : "*",
+        Condition : {
+          StringEquals : {
+            "kms:ViaService" : "secretsmanager.${var.region}.amazonaws.com"
+          }
+        }
       }
     ]
   })
@@ -360,7 +372,7 @@ resource "aws_iam_role_policy" "rds_proxy_sm_access" {
 resource "aws_db_proxy" "mysql" {
   name                = "webapp-mysql-proxy"
   engine_family       = "MYSQL"
-  require_tls         = true
+  require_tls         = false
   idle_client_timeout = 1800
   debug_logging       = false
 
