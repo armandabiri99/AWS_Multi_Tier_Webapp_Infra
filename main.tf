@@ -552,9 +552,7 @@ resource "aws_launch_template" "lt" {
 
   systemctl enable --now amazon-ssm-agent || true
 
-  # retry() { n=0; until "$@" || [ $n -ge 10 ]; do n=$((n+1)); sleep 3; done; "$@"; }
-
-  # Retrieve database credentials from SSM Parameter Store (with retries)
+  # Retrieve database credentials from SSM Parameter Store
   DB_NAME=$(aws ssm get-parameter --name "${aws_ssm_parameter.db_name.name}" --region ${var.region} --query 'Parameter.Value' --output text)
   DB_USER=$(aws ssm get-parameter --name "${aws_ssm_parameter.db_user.name}" --region ${var.region} --query 'Parameter.Value' --output text)
   DB_PASS=$(aws ssm get-parameter --name "${aws_ssm_parameter.db_pass.name}" --with-decryption --region ${var.region} --query 'Parameter.Value' --output text)
