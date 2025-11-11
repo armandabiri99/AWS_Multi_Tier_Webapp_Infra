@@ -520,6 +520,7 @@ resource "aws_launch_template" "lt" {
   instance_type = var.instance_type
   iam_instance_profile { name = aws_iam_instance_profile.ec2_profile.name }
   vpc_security_group_ids = [aws_security_group.app_sg.id]
+  update_default_version = true
 
   # Increase root volume size for Docker images
   block_device_mappings {
@@ -551,12 +552,12 @@ resource "aws_launch_template" "lt" {
 
   systemctl enable --now amazon-ssm-agent || true
 
-  retry() { n=0; until "$@" || [ $n -ge 10 ]; do n=$((n+1)); sleep 3; done; "$@"; }
+  # retry() { n=0; until "$@" || [ $n -ge 10 ]; do n=$((n+1)); sleep 3; done; "$@"; }
 
   # Retrieve database credentials from SSM Parameter Store (with retries)
-  DB_NAME=$(retry aws ssm get-parameter --name "${aws_ssm_parameter.db_name.name}" --region ${var.region} --query 'Parameter.Value' --output text)
-  DB_USER=$(retry aws ssm get-parameter --name "${aws_ssm_parameter.db_user.name}" --region ${var.region} --query 'Parameter.Value' --output text)
-  DB_PASS=$(retry aws ssm get-parameter --name "${aws_ssm_parameter.db_pass.name}" --with-decryption --region ${var.region} --query 'Parameter.Value' --output text)
+  DB_NAME=$(aws ssm get-parameter --name "${aws_ssm_parameter.db_name.name}" --region ${var.region} --query 'Parameter.Value' --output text)
+  DB_USER=$(aws ssm get-parameter --name "${aws_ssm_parameter.db_user.name}" --region ${var.region} --query 'Parameter.Value' --output text)
+  DB_PASS=$(aws ssm get-parameter --name "${aws_ssm_parameter.db_pass.name}" --with-decryption --region ${var.region} --query 'Parameter.Value' --output text)
 
   # Start application container
   docker rm -f webapp || true
