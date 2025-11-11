@@ -97,10 +97,6 @@ resource "aws_vpc_security_group_egress_rule" "alb_egress_all_ipv4" {
 resource "aws_security_group" "app_sg" {
   name   = "app-sg"
   vpc_id = aws_vpc.main.id
-  lifecycle {
-    ignore_changes = [ingress, egress]
-  }
-
   tags = { Name = "app-sg" }
 }
 
@@ -163,9 +159,6 @@ resource "aws_security_group" "eic_endpoint_sg" {
   description = "SG for EC2 Instance Connect Endpoints"
   vpc_id      = aws_vpc.main.id
   tags        = { Name = "eic-endpoint-sg" }
-  lifecycle {
-    ignore_changes = [ingress, egress]
-  }
 }
 
 resource "aws_vpc_security_group_egress_rule" "eic_to_app_ssh" {
@@ -384,7 +377,7 @@ resource "aws_db_proxy" "mysql" {
   auth {
     auth_scheme = "SECRETS"
     secret_arn  = aws_secretsmanager_secret.db_auth.arn
-    iam_auth    = "DISABLED" # set to "REQUIRED" if you want IAM DB auth
+    iam_auth    = "DISABLED"
   }
 
   tags = { Role = "rds-proxy" }
