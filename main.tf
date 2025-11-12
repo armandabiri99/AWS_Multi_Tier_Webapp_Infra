@@ -97,7 +97,7 @@ resource "aws_vpc_security_group_egress_rule" "alb_egress_all_ipv4" {
 resource "aws_security_group" "app_sg" {
   name   = "app-sg"
   vpc_id = aws_vpc.main.id
-  tags = { Name = "app-sg" }
+  tags   = { Name = "app-sg" }
 }
 
 # ALB -> App on container port
