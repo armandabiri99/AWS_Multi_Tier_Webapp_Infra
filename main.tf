@@ -264,8 +264,14 @@ resource "aws_db_instance" "mysql" {
 
 # RDS Read Replicas
 
+resource "time_sleep" "wait_for_primary_backups" {
+  depends_on      = [aws_db_instance.mysql]
+  create_duration = "120s" # 2 minutes is usually plenty; bump to 180s if needed
+}
+
 resource "aws_db_instance" "mysql_replicas" {
   for_each                   = toset(var.azs)
+  depends_on                 = [time_sleep.wait_for_primary_backups]
   identifier                 = "webapp-mysql-rr-${replace(each.value, "-", "")}"
   replicate_source_db        = aws_db_instance.mysql.arn
   instance_class             = var.db_instance
@@ -521,6 +527,19 @@ resource "aws_launch_template" "lt" {
   iam_instance_profile { name = aws_iam_instance_profile.ec2_profile.name }
   vpc_security_group_ids = [aws_security_group.app_sg.id]
   update_default_version = true
+  depends_on = [
+    aws_vpc_endpoint.ssm,
+    aws_vpc_endpoint.ssmmessages,
+    aws_vpc_endpoint.ec2messages,
+    aws_vpc_endpoint.ecr_api,
+    aws_vpc_endpoint.ecr_dkr,
+    aws_vpc_endpoint.s3,
+    aws_ssm_parameter.db_name,
+    aws_ssm_parameter.db_user,
+    aws_ssm_parameter.db_pass,
+    aws_db_proxy_target.writer,
+    aws_db_proxy_default_target_group.this
+  ]
 
   # Increase root volume size for Docker images
   block_device_mappings {
